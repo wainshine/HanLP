@@ -7,7 +7,6 @@ from typing import Union, Any, List
 import tensorflow as tf
 
 from hanlp.common.component import KerasComponent
-from hanlp.common.transform import Transform
 from hanlp.components.taggers.ngram_conv.ngram_conv_tagger import NgramTransform, NgramConvTagger
 from hanlp.components.taggers.rnn_tagger import RNNTagger
 from hanlp.components.taggers.transformers.transformer_tagger import TransformerTagger
@@ -17,8 +16,6 @@ from hanlp.metrics.chunking.bmes import BMES_F1
 from hanlp.transform.tsv import TSVTaggingTransform
 from hanlp.transform.txt import extract_ngram_features_and_tags, bmes_to_words, TxtFormat, TxtBMESFormat
 from hanlp.utils.util import merge_locals_kwargs
-
-
 class BMESTokenizer(KerasComponent):
 
     def build_metrics(self, metrics, logger: logging.Logger, **kwargs):

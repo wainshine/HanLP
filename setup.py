@@ -23,16 +23,18 @@ setup(
     license='Apache License 2.0',
     classifiers=[
         'Intended Audience :: Science/Research',
+        'Intended Audience :: Developers',
         "Development Status :: 3 - Alpha",
         'Operating System :: OS Independent',
         "License :: OSI Approved :: Apache Software License",
-        'Programming Language :: Python :: 3.6',
-        'Topic :: Scientific/Engineering :: Artificial Intelligence'
+        'Programming Language :: Python :: 3 :: Only',
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+        "Topic :: Text Processing :: Linguistic"
     ],
     keywords='corpus,machine-learning,NLU,NLP',
     packages=find_packages(exclude=['docs', 'tests*']),
     include_package_data=True,
-    install_requires=['tensorflow==2.1.0rc2', 'fasttext==0.9.1', 'transformers==2.3.0'],
+    install_requires=['tensorflow==2.1.0rc2', 'fasttext==0.9.1', 'bert-for-tf2==0.12.7', 'sentencepiece==0.1.85'],
     python_requires='>=3.6',
     # entry_points={
     #     'console_scripts': [

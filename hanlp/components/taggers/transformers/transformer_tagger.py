@@ -3,16 +3,14 @@
 # Date: 2019-12-29 13:55
 import logging
 import math
-import os
 
 import tensorflow as tf
 
 from hanlp.components.taggers.tagger import TaggerComponent
 from hanlp.components.taggers.transformers.metrics import MaskedSparseCategoricalAccuracy
 from hanlp.components.taggers.transformers.transformer_transform import TransformerTransform
-from hanlp.layers.transformers import AutoTokenizer, TFAutoModel, TFPreTrainedModel, PreTrainedTokenizer, TFAlbertModel, \
-    BertTokenizer
-from hanlp.losses.sparse_categorical_crossentropy import MaskedSparseCategoricalCrossentropyOverBatchFirstDim
+from hanlp.layers.transformers.loader import build_transformer
+from hanlp.losses.sparse_categorical_crossentropy import SparseCategoricalCrossentropyOverBatchFirstDim
 from hanlp.optimizers.adamw import create_optimizer
 from hanlp.utils.util import merge_locals_kwargs
 
@@ -34,22 +32,9 @@ class TransformerTagger(TaggerComponent):
         self.transform: TransformerTransform = transform
 
     def build_model(self, transformer, max_seq_length, **kwargs) -> tf.keras.Model:
-        tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(transformer)
+        model, tokenizer = build_transformer(transformer, max_seq_length, len(self.transform.tag_vocab), tagging=True)
         self.transform.tokenizer = tokenizer
-        transformer: TFPreTrainedModel = TFAutoModel.from_pretrained(transformer, name=os.path.basename(transformer))
-        self.transform.transformer_config = transformer.config
-
-        input_ids = tf.keras.layers.Input(shape=(max_seq_length,), dtype=tf.int32, name='input_ids')
-        input_mask = tf.keras.layers.Input(shape=(max_seq_length,), dtype=tf.int32, name='input_mask')
-        segment_ids = tf.keras.layers.Input(shape=(max_seq_length,), dtype=tf.int32, name='segment_ids')
-        sequence_output = transformer([input_ids, input_mask, segment_ids])[0]
-        sequence_output = tf.keras.layers.Dropout(transformer.config.to_dict().get('hidden_dropout_prob', 0.1),
-                                                  name='hidden_dropout')(sequence_output)
-        logits = tf.keras.layers.Dense(len(self.transform.tag_vocab),
-                                       kernel_initializer=tf.keras.initializers.TruncatedNormal(
-                                           transformer.config.to_dict().get('initializer_range', 0.02)))(
-            sequence_output)
-        return tf.keras.Model(inputs=[input_ids, input_mask, segment_ids], outputs=logits)
+        return model
 
     def fit(self, trn_data, dev_data, save_dir,
             transformer,
@@ -112,9 +97,4 @@ class TransformerTagger(TaggerComponent):
         return history
 
     def build_loss(self, loss, **kwargs):
-        return MaskedSparseCategoricalCrossentropyOverBatchFirstDim()
-
-    def build_metrics(self, metrics, logger: logging.Logger, **kwargs):
-        if metrics == 'accuracy':
-            return MaskedSparseCategoricalAccuracy('accuracy')
-        return super().build_metrics(metrics, logger, **kwargs)
+        return SparseCategoricalCrossentropyOverBatchFirstDim()
