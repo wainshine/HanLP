@@ -67,7 +67,12 @@ def vocab_from_tsv(tsv_file_path, lower=False, lock_word_vocab=False, lock_char_
 class TsvTaggingFormat(Transform, ABC):
     def file_to_inputs(self, filepath: str, gold=True):
         assert gold, 'TsvTaggingFormat does not support reading non-gold files'
-        yield from generator_words_tags(filepath, gold=gold, lower=self.config.get('lower', False))
+        yield from generator_words_tags(filepath, gold=gold, lower=self.config.get('lower', False),
+                                        max_seq_length=self.max_seq_length)
+
+    @property
+    def max_seq_length(self):
+        return self.config.get('max_seq_length', None)
 
 
 class TSVTaggingTransform(TsvTaggingFormat, Transform):
@@ -126,14 +131,11 @@ class TSVTaggingTransform(TsvTaggingFormat, Transform):
 
     def Y_to_outputs(self, Y: Union[tf.Tensor, Tuple[tf.Tensor]], gold=False,
                      inputs=None, X=None, **kwargs) -> Iterable:
-        masks = Y._keras_mask if hasattr(Y, '_keras_mask') else tf.ones_like(Y)
         if not gold:
             Y = tf.argmax(Y, axis=2)
-        for ys, mask in zip(Y, masks):
+        for ys, xs in zip(Y, inputs):
             tags = []
-            for y, m in zip(ys, mask):
-                if not m:
-                    break
+            for y, x in zip(ys, xs):
                 tags.append(self.tag_vocab.idx_to_token[int(y)])
             yield tags
 

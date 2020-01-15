@@ -23,6 +23,7 @@ import numpy as np
 
 from hanlp.utils import time_util
 from hanlp.utils.log_util import logger
+from hanlp.utils.string_util import split_long_sentence_into
 from hanlp.utils.time_util import now_filename
 from hanlp.common.constant import HANLP_URL
 from hanlp import version
@@ -120,11 +121,15 @@ def hanlp_home_default():
 
     :return: default data directory depending on the platform and environment variables
     """
-    system = platform.system()
-    if system == 'Windows':
+    if windows():
         return os.path.join(os.environ.get('APPDATA'), 'hanlp')
     else:
         return os.path.join(os.path.expanduser("~"), '.hanlp')
+
+
+def windows():
+    system = platform.system()
+    return system == 'Windows'
 
 
 def hanlp_home():
@@ -156,11 +161,11 @@ def download(url, save_path=None, save_dir=hanlp_home(), prefix=HANLP_URL, appen
     if not save_path:
         save_path = path_from_url(url, save_dir, prefix, append_location)
     if os.path.isfile(save_path):
-        print('Using local {}, ignore {}'.format(save_path, url))
+        eprint('Using local {}, ignore {}'.format(save_path, url))
         return save_path
     else:
         makedirs(parent_dir(save_path))
-        print('Downloading {} to {}'.format(url, save_path))
+        eprint('Downloading {} to {}'.format(url, save_path))
         tmp_path = '{}.downloading'.format(save_path)
         remove_file(tmp_path)
         try:
@@ -182,10 +187,10 @@ def download(url, save_path=None, save_dir=hanlp_home(), prefix=HANLP_URL, appen
                 eta = duration / ratio * (1 - ratio)
                 speed = human_bytes(speed)
                 progress_size = human_bytes(progress_size)
-                sys.stdout.write("\r%.2f%%, %s/%s, %s/s, ETA %s      " %
+                sys.stderr.write("\r%.2f%%, %s/%s, %s/s, ETA %s      " %
                                  (percent, progress_size, human_bytes(total_size), speed,
                                   time_util.report_time_delta(eta)))
-                sys.stdout.flush()
+                sys.stderr.flush()
 
             import socket
             socket.setdefaulttimeout(10)
@@ -193,11 +198,16 @@ def download(url, save_path=None, save_dir=hanlp_home(), prefix=HANLP_URL, appen
             opener.addheaders = [('User-agent', f'HanLP/{version.__version__}')]
             urllib.request.install_opener(opener)
             urlretrieve(url, tmp_path, reporthook)
-            print()
+            eprint()
         except BaseException as e:
             remove_file(tmp_path)
+            hints_for_download = ''
+            url = url.split('#')[0]
+            if not windows():
+                hints_for_download = f'e.g. \nwget {url} -O {save_path}\n'
             eprint(f'Failed to download {url} due to {repr(e)}. Please download it to {save_path} by yourself. '
-                   f'Or consider upgrading pip install -U hanlp')
+                   f'{hints_for_download}'
+                   f'Or consider upgrading to a new version.\npip install -U hanlp')
             exit(1)
         remove_file(save_path)
         os.rename(tmp_path, save_path)
@@ -243,7 +253,7 @@ def uncompress(path, dest=None, remove=True):
                 else:
                     root_of_folder = None
                     dest = prefix  # assume zip contains more than one files or folders
-            print('Extracting {} to {}'.format(path, dest))
+            eprint('Extracting {} to {}'.format(path, dest))
             archive.extractall(dest)
             if root_of_folder:
                 if root_of_folder != folder_name:
@@ -291,31 +301,31 @@ def get_resource(path: str, save_dir=None, extract=True, prefix=HANLP_URL, appen
         if '#' in url:
             url, anchor = url.split('#', maxsplit=1)
         realpath = path_from_url(path, save_dir, prefix, append_location)
+        realpath, compressed = split_if_compressed(realpath)
+        # check if resource is there
+        if anchor:
+            if anchor.startswith('/'):
+                # indicates the folder name has to be polished
+                anchor = anchor.lstrip('/')
+                parts = anchor.split('/')
+                realpath = str(Path(realpath).parent.joinpath(parts[0]))
+                anchor = '/'.join(parts[1:])
+            child = path_join(realpath, anchor)
+            if os.path.exists(child):
+                return child
+        elif os.path.isdir(realpath) or os.path.isfile(realpath):
+            return realpath
+        else:
+            pattern = realpath + '.*'
+            files = glob.glob(pattern)
+            if files:
+                if len(files) > 1:
+                    logger.debug(f'Found multiple files with {pattern}, will use the first one.')
+                return files[0]
+        # realpath is where its path after exaction
+        if compressed:
+            realpath += compressed
         if not os.path.isfile(realpath):
-            realpath, compressed = split_if_compressed(realpath)
-            # check if resource is there
-            if anchor:
-                if anchor.startswith('/'):
-                    # indicates the folder name has to be polished
-                    anchor = anchor.lstrip('/')
-                    parts = anchor.split('/')
-                    realpath = str(Path(realpath).parent.joinpath(parts[0]))
-                    anchor = '/'.join(parts[1:])
-                child = path_join(realpath, anchor)
-                if os.path.exists(child):
-                    return child
-            elif os.path.isdir(realpath) or os.path.isfile(realpath):
-                return realpath
-            else:
-                pattern = realpath + '.*'
-                files = glob.glob(pattern)
-                if files:
-                    if len(files) > 1:
-                        logger.debug(f'Found multiple files with {pattern}, will use the first one.')
-                    return files[0]
-            # realpath is where its path after exaction
-            if compressed:
-                realpath += compressed
             path = download(url=path, save_path=realpath)
         else:
             path = realpath
@@ -450,16 +460,29 @@ def read_tsv(tsv_file_path):
         yield sent
 
 
-def generator_words_tags(tsv_file_path, lower=True, gold=True):
+def generator_words_tags(tsv_file_path, lower=True, gold=True, max_seq_length=None):
     for sent in read_tsv(tsv_file_path):
         words = [cells[0] for cells in sent]
-        if gold:
-            tags = [cells[1] for cells in sent]
+        if max_seq_length and len(words) > max_seq_length:
+            offset = 0
+            # try to split the sequence to make it fit into max_seq_length
+            for shorter_words in split_long_sentence_into(words, max_seq_length):
+                if gold:
+                    shorter_tags = [cells[1] for cells in sent[offset:offset + len(shorter_words)]]
+                    offset += len(shorter_words)
+                else:
+                    shorter_tags = None
+                if lower:
+                    shorter_words = [word.lower() for word in shorter_words]
+                yield shorter_words, shorter_tags
         else:
-            tags = None
-        if lower:
-            words = [word.lower() for word in words]
-        yield words, tags
+            if gold:
+                tags = [cells[1] for cells in sent]
+            else:
+                tags = None
+            if lower:
+                words = [word.lower() for word in words]
+            yield words, tags
 
 
 def split_file(filepath, train=0.8, valid=0.1, test=0.1, names=None, shuffle=False):
@@ -498,7 +521,10 @@ def split_file(filepath, train=0.8, valid=0.1, test=0.1, names=None, shuffle=Fal
 
 
 def fileno(file_or_fd):
-    fd = getattr(file_or_fd, 'fileno', lambda: file_or_fd)()
+    try:
+        fd = getattr(file_or_fd, 'fileno', lambda: file_or_fd)()
+    except:
+        return None
     if not isinstance(fd, int):
         raise ValueError("Expected a file (`.fileno()`) or a file descriptor")
     return fd
@@ -516,9 +542,11 @@ def stdout_redirected(to=os.devnull, stdout=None):
     """
     if stdout is None:
         stdout = sys.stdout
-
     stdout_fd = fileno(stdout)
-    # copy stdout_fd before it is overwritten
+    if not stdout_fd:
+        yield None
+        return
+        # copy stdout_fd before it is overwritten
     # NOTE: `copied` is inheritable on Windows when duplicating a standard stream
     with os.fdopen(os.dup(stdout_fd), 'wb') as copied:
         stdout.flush()  # flush library buffers that dup2 knows nothing about

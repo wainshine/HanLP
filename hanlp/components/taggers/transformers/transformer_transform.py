@@ -23,6 +23,11 @@ class TransformerTransform(TsvTaggingFormat, Transform):
         self.special_token_ids = None
 
     @property
+    def max_seq_length(self):
+        # -2 for special tokens [CLS] and [SEP]
+        return self.config.get('max_seq_length', 128) - 2
+
+    @property
     def tokenizer(self):
         return self._tokenizer
 
@@ -59,6 +64,7 @@ class TransformerTransform(TsvTaggingFormat, Transform):
         pad_token = '[PAD]'
         cls_token = '[CLS]'
         sep_token = '[SEP]'
+        unk_token = '[UNK]'
 
         pad_label_idx = self.tag_vocab.pad_idx
         pad_token = tokenizer.convert_tokens_to_ids([pad_token])[0]
@@ -82,7 +88,8 @@ class TransformerTransform(TsvTaggingFormat, Transform):
                                                                                          # pad on the left for xlnet
                                                                                          pad_token=pad_token,
                                                                                          pad_token_segment_id=4 if xlnet else 0,
-                                                                                         pad_token_label_id=pad_label_idx)
+                                                                                         pad_token_label_id=pad_label_idx,
+                                                                                         unk_token=unk_token)
 
             if None in input_ids:
                 print(input_ids)
@@ -93,10 +100,10 @@ class TransformerTransform(TsvTaggingFormat, Transform):
             yield (input_ids, input_mask, segment_ids), label_ids
 
     def x_to_idx(self, x) -> Union[tf.Tensor, Tuple]:
-        raise NotImplementedError('transformers has its own tokenizer, not need to convert idx for x')
+        raise NotImplementedError('transformers has its own tagger, not need to convert idx for x')
 
     def y_to_idx(self, y) -> tf.Tensor:
-        raise NotImplementedError('transformers has its own tokenizer, not need to convert idx for y')
+        raise NotImplementedError('transformers has its own tagger, not need to convert idx for y')
 
     def input_is_single_sample(self, input: Union[List[str], List[List[str]]]) -> bool:
         return isinstance(input[0], str)

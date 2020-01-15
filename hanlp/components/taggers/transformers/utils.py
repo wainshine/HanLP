@@ -1,6 +1,7 @@
 # -*- coding:utf-8 -*-
 # Author: hankcs
 # Date: 2019-12-29 15:32
+from hanlp.utils.log_util import logger
 
 
 def config_is(config, model='bert'):
@@ -24,6 +25,7 @@ def convert_examples_to_features(
         pad_token_label_id=0,
         sequence_a_segment_id=0,
         mask_padding_with_zero=True,
+        unk_token='[UNK]'
 ):
     """ Loads a data file into a list of `InputBatch`s
         `cls_token_at_end` define the location of the CLS token:
@@ -39,8 +41,8 @@ def convert_examples_to_features(
     for word, label in zip(words, labels):
         word_tokens = tokenizer.tokenize(word)
         if not word_tokens:
-            # some wired chars cause the tokenizer to return empty list
-            word_tokens = [tokenizer.unk_token] * len(word)
+            # some wired chars cause the tagger to return empty list
+            word_tokens = [unk_token] * len(word)
         tokens.extend(word_tokens)
         # Use the real label id for the first token of the word, and padding ids for the remaining tokens
         label_ids.extend([label_map[label]] + [pad_token_label_id] * (len(word_tokens) - 1))
@@ -48,6 +50,11 @@ def convert_examples_to_features(
     # Account for [CLS] and [SEP] with "- 2" and with "- 3" for RoBERTa.
     special_tokens_count = 3 if sep_token_extra else 2
     if len(tokens) > max_seq_length - special_tokens_count:
+        logger.warning(
+            f'Input tokens {words} exceed the max sequence length of {max_seq_length - special_tokens_count}. '
+            f'The exceeded part will be truncated and ignored. '
+            f'You are recommended to split your long text into several sentences within '
+            f'{max_seq_length - special_tokens_count} tokens beforehand.')
         tokens = tokens[: (max_seq_length - special_tokens_count)]
         label_ids = label_ids[: (max_seq_length - special_tokens_count)]
 

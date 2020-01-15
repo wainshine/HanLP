@@ -3,13 +3,14 @@
 # Date: 2019-10-24 15:07
 import functools
 from abc import ABC
-from typing import Tuple, Union, List
+from typing import Tuple, Union, List, Iterable
 
 import tensorflow as tf
 
 from hanlp.common.transform import Transform
 from hanlp.common.vocab import Vocab
 from hanlp.utils.io_util import get_resource
+from hanlp.utils.lang.zh.char_table import CharTable
 
 
 def generate_words_per_line(file_path):
@@ -66,6 +67,7 @@ def extract_ngram_features_and_tags(sentence, bigram_only=False, window_size=4, 
 
     """
     chars, tags = bmes_of(sentence, segmented)
+    chars = CharTable.normalize_chars(chars)
     ret = []
     ret.append(chars)
     # TODO: optimize ngram generation using https://www.tensorflow.org/api_docs/python/tf/strings/ngrams
@@ -191,9 +193,42 @@ class TxtFormat(Transform, ABC):
 
 class TxtBMESFormat(TxtFormat, ABC):
     def file_to_inputs(self, filepath: str, gold=True):
+        max_seq_len = self.config.get('max_seq_len', False)
+        if max_seq_len:
+            delimiter = set()
+            delimiter.update('。！？：；、，,;!?、,')
         for text in super().file_to_inputs(filepath, gold):
             chars, tags = bmes_of(text, gold)
-            yield chars, tags
+            if max_seq_len and len(chars) > max_seq_len:
+                short_chars, short_tags = [], []
+                for idx, (char, tag) in enumerate(zip(chars, tags)):
+                    short_chars.append(char)
+                    short_tags.append(tag)
+                    if len(short_chars) >= max_seq_len and char in delimiter:
+                        yield short_chars, short_tags
+                        short_chars, short_tags = [], []
+                if short_chars:
+                    yield short_chars, short_tags
+            else:
+                yield chars, tags
 
     def input_is_single_sample(self, input: Union[List[str], List[List[str]]]) -> bool:
         return isinstance(input, str)
+
+    def inputs_to_samples(self, inputs, gold=False):
+        for chars, tags in (inputs if gold else zip(inputs, [None] * len(inputs))):
+            if not gold:
+                tags = [self.tag_vocab.safe_pad_token] * len(chars)
+            chars = CharTable.normalize_chars(chars)
+            yield chars, tags
+
+    def Y_to_outputs(self, Y: Union[tf.Tensor, Tuple[tf.Tensor]], gold=False, inputs=None, X=None) -> Iterable:
+        yield from self.Y_to_tokens(self.tag_vocab, Y, gold, inputs)
+
+    @staticmethod
+    def Y_to_tokens(tag_vocab, Y, gold, inputs):
+        if not gold:
+            Y = tf.argmax(Y, axis=2)
+        for text, ys in zip(inputs, Y):
+            tags = [tag_vocab.idx_to_token[int(y)] for y in ys[:len(text)]]
+            yield bmes_to_words(list(text), tags)

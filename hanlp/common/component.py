@@ -21,7 +21,7 @@ from hanlp.metrics.chunking.iobes import IOBES_F1
 from hanlp.optimizers.adamw.optimization import AdamWeightDecay
 from hanlp.utils import io_util
 from hanlp.utils.io_util import get_resource, tempdir_human, save_json, load_json
-from hanlp.utils.log_util import init_logger
+from hanlp.utils.log_util import init_logger, logger
 from hanlp.utils.reflection import class_path_of, str_to_type
 from hanlp.utils.string_util import format_metrics, format_scores
 from hanlp.utils.tf_util import size_of_dataset, summary_of_model, get_callback_by_class
@@ -218,6 +218,19 @@ class KerasComponent(Component, ABC):
             vocab.copy_from(value)
             setattr(self.transform, key, vocab)
 
+    def load_transform(self, save_dir) -> Transform:
+        """
+        Try to load transform only. This method might fail due to the fact it avoids building the model.
+        If it do fail, then you have to use `load` which might be too heavy but that's the best we can do.
+        :param save_dir: The path to load.
+        """
+        save_dir = get_resource(save_dir)
+        self.load_config(save_dir)
+        self.load_vocabs(save_dir)
+        self.transform.build_config()
+        self.transform.lock_vocabs()
+        return self.transform
+
     def save(self, save_dir: str, **kwargs):
         self.save_config(save_dir)
         self.save_vocabs(save_dir)
@@ -229,7 +242,7 @@ class KerasComponent(Component, ABC):
         self.load_config(save_dir)
         self.load_vocabs(save_dir)
         self.build(**merge_dict(self.config, training=False, logger=logger, **kwargs, overwrite=True, inplace=True))
-        self.load_weights(save_dir)
+        self.load_weights(save_dir, **kwargs)
         self.load_meta(save_dir)
 
     @property
@@ -478,3 +491,34 @@ class KerasComponent(Component, ABC):
         assert 'load_path' in meta, f'{meta} doesn\'t contain load_path field'
         obj.load(meta['load_path'])
         return obj
+
+    def export_model_for_serving(self, export_dir=None, version=1, overwrite=False, show_hint=False):
+        assert self.model, 'You have to fit or load a model before exporting it'
+        if not export_dir:
+            assert 'load_path' in self.meta, 'When not specifying save_dir, load_path has to present'
+            export_dir = get_resource(self.meta['load_path'])
+        model_path = os.path.join(export_dir, str(version))
+        if os.path.isdir(model_path) and not overwrite:
+            logger.info(f'{model_path} exists, skip since overwrite = {overwrite}')
+            return export_dir
+        logger.info(f'Exporting to {export_dir} ...')
+        tf.saved_model.save(self.model, model_path)
+        logger.info(f'Successfully exported model to {export_dir}')
+        if show_hint:
+            logger.info(f'You can serve it through \n'
+                        f'tensorflow_model_server --model_name={os.path.splitext(os.path.basename(self.meta["load_path"]))[0]} '
+                        f'--model_base_path={export_dir} --rest_api_port=8888')
+        return export_dir
+
+    def serve(self, export_dir=None, grpc_port=8500, rest_api_port=0, overwrite=False, dry_run=False):
+        export_dir = self.export_model_for_serving(export_dir, show_hint=False, overwrite=overwrite)
+        if not dry_run:
+            del self.model  # free memory
+        logger.info('The inputs of exported model is shown below.')
+        os.system(f'saved_model_cli show --all --dir {export_dir}/1')
+        cmd = f'nohup tensorflow_model_server --model_name={os.path.splitext(os.path.basename(self.meta["load_path"]))[0]} ' \
+              f'--model_base_path={export_dir} --port={grpc_port} --rest_api_port={rest_api_port} ' \
+              f'>serve.log 2>&1 &'
+        logger.info(f'Running ...\n{cmd}')
+        if not dry_run:
+            os.system(cmd)
