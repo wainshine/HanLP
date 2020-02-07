@@ -196,7 +196,7 @@ class KerasComponent(Component, ABC):
     def save_weights(self, save_dir, filename='model.h5'):
         self.model.save_weights(os.path.join(save_dir, filename))
 
-    def load_weights(self, save_dir, filename='model.h5'):
+    def load_weights(self, save_dir, filename='model.h5', **kwargs):
         assert self.model.built or self.model.weights, 'You must call self.model.built() in build_model() ' \
                                                        'in order to load it'
         save_dir = get_resource(save_dir)
@@ -447,14 +447,18 @@ class KerasComponent(Component, ABC):
         if not batch_size:
             batch_size = self.config.batch_size
 
-        dataset = self.transform.inputs_to_dataset(data, batch_size=batch_size)
+        dataset = self.transform.inputs_to_dataset(data, batch_size=batch_size, gold=kwargs.get('gold', False))
 
         results = []
         num_samples = 0
+        data_is_list = isinstance(data, list)
         for idx, batch in enumerate(dataset):
             samples_in_batch = tf.shape(batch[-1] if isinstance(batch[-1], tf.Tensor) else batch[-1][0])[0]
-            inputs = data[num_samples:num_samples + samples_in_batch]
-            for output in self.predict_batch(batch, inputs=inputs):
+            if data_is_list:
+                inputs = data[num_samples:num_samples + samples_in_batch]
+            else:
+                inputs = None  # if data is a generator, it's usually one-time, not able to transform into a list
+            for output in self.predict_batch(batch, inputs=inputs, **kwargs):
                 results.append(output)
             num_samples += samples_in_batch
 
@@ -462,10 +466,10 @@ class KerasComponent(Component, ABC):
             return results[0]
         return results
 
-    def predict_batch(self, batch, inputs=None):
+    def predict_batch(self, batch, inputs=None, **kwargs):
         X = batch[0]
         Y = self.model.predict_on_batch(X)
-        for output in self.transform.Y_to_outputs(Y, X=X, inputs=inputs):
+        for output in self.transform.Y_to_outputs(Y, X=X, inputs=inputs, **kwargs):
             yield output
 
     @property

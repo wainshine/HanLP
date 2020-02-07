@@ -38,7 +38,7 @@ class TransformerTextTransform(TableTransform):
             if num_features is None:
                 num_features = self.config.num_features
             assert num_features == len(X), f'Numbers of features {num_features} ' \
-                                           f'inconsistent with current {len(X)}'
+                                           f'inconsistent with current {len(X)}={X}'
             text_a = X[0]
             text_b = X[1] if len(X) > 1 else None
             tokens_a = self.tokenizer.tokenize(text_a)
@@ -137,8 +137,9 @@ class TransformerClassifier(KerasComponent):
             # opt = tf.keras.optimizers.Adam(learning_rate=3e-5, epsilon=1e-08)
             self.config.optimizer = tf.keras.utils.serialize_keras_object(opt)
             lr_config = self.config.optimizer['config']['learning_rate']['config']
-            lr_config['decay_schedule_fn'] = dict(
-                (k, v) for k, v in lr_config['decay_schedule_fn'].get_config().items() if not k.startswith('_'))
+            if hasattr(lr_config['decay_schedule_fn'], 'get_config'):
+                lr_config['decay_schedule_fn'] = dict(
+                    (k, v) for k, v in lr_config['decay_schedule_fn'].get_config().items() if not k.startswith('_'))
         else:
             opt = super().build_optimizer(optimizer)
         if use_amp:

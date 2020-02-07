@@ -2,7 +2,7 @@
 # Author: hankcs
 # Date: 2019-12-26 15:37
 from collections import Counter
-from typing import Generator, Tuple, Union, Iterable, Any
+from typing import Generator, Tuple, Union, Iterable, Any, List
 
 import tensorflow as tf
 import numpy as np
@@ -17,7 +17,7 @@ from hanlp.utils.string_util import ispunct
 from hanlp.utils.util import merge_locals_kwargs
 
 
-class CoNLLWord(object):
+class CoNLLWord(SerializableDict):
     def __init__(self, id, form, lemma=None, cpos=None, pos=None, feats=None, head=None, deprel=None, phead=None,
                  pdeprel=None):
         """CoNLL format template, see http://anthology.aclweb.org/W/W06/W06-2920.pdf
@@ -92,6 +92,41 @@ class CoNLLSentence(list):
 
     def __str__(self):
         return '\n'.join([word.__str__() for word in self])
+
+    @staticmethod
+    def from_str(conll: str):
+        """
+        Build a CoNLLSentence from CoNLL-X format str
+
+        Parameters
+        ----------
+        conll : str
+             CoNLL-X format string
+
+        Returns
+        -------
+        CoNLLSentence
+
+        """
+        words: List[CoNLLWord] = []
+        prev_id = None
+        for line in conll.strip().split('\n'):
+            if line.startswith('#'):
+                continue
+            cells = line.split()
+            cells[0] = int(cells[0])
+            cells[6] = int(cells[6])
+            if cells[0] != prev_id:
+                words.append(CoNLLWord(*cells))
+            else:
+                if isinstance(words[-1].head, list):
+                    words[-1].head.append(cells[6])
+                    words[-1].deprel.append(cells[7])
+                else:
+                    words[-1].head = [words[-1].head] + [cells[6]]
+                    words[-1].deprel = [words[-1].deprel] + [cells[7]]
+            prev_id = cells[0]
+        return CoNLLSentence(words)
 
 
 def read_conll(filepath):
@@ -258,7 +293,7 @@ class CoNLL_DEP_Transform(CoNLLTransform):
             yield sample
 
     def XY_to_inputs_outputs(self, X: Union[tf.Tensor, Tuple[tf.Tensor]], Y: Union[tf.Tensor, Tuple[tf.Tensor]],
-                             gold=False, inputs=None) -> Iterable:
+                             gold=False, inputs=None, conll=True) -> Iterable:
         (words, feats, mask), (arc_preds, rel_preds) = X, Y
         if inputs is None:
             inputs = self.X_to_inputs(X)
@@ -267,7 +302,10 @@ class CoNLL_DEP_Transform(CoNLLTransform):
         for x, y in zip(inputs, ys):
             sent = CoNLLSentence()
             for idx, ((form, cpos), (head, deprel)) in enumerate(zip(x, y)):
-                sent.append(CoNLLWord(id=idx + 1, form=form, cpos=cpos, head=head, deprel=deprel))
+                if conll:
+                    sent.append(CoNLLWord(id=idx + 1, form=form, cpos=cpos, head=head, deprel=deprel))
+                else:
+                    sent.append([head, deprel])
             sents.append(sent)
         return sents
 
@@ -465,7 +503,7 @@ class CoNLL_SDP_Transform(CoNLLTransform):
         return sents
 
     def XY_to_inputs_outputs(self, X: Union[tf.Tensor, Tuple[tf.Tensor]], Y: Union[tf.Tensor, Tuple[tf.Tensor]],
-                             gold=False, inputs=None) -> Iterable:
+                             gold=False, inputs=None, conll=True) -> Iterable:
         (words, feats, mask), (arc_preds, rel_preds) = X, Y
         xs = inputs
         ys = self.Y_to_outputs((arc_preds, rel_preds, mask))
@@ -473,7 +511,11 @@ class CoNLL_SDP_Transform(CoNLLTransform):
         for x, y in zip(xs, ys):
             sent = CoNLLSentence()
             for idx, ((form, cpos), pred) in enumerate(zip(x, y)):
-                sent.append(
-                    CoNLLWord(id=idx + 1, form=form, cpos=cpos, head=[p[0] for p in pred], deprel=[p[1] for p in pred]))
+                head = [p[0] for p in pred]
+                deprel = [p[1] for p in pred]
+                if conll:
+                    sent.append(CoNLLWord(id=idx + 1, form=form, cpos=cpos, head=head, deprel=deprel))
+                else:
+                    sent.append([head, deprel])
             sents.append(sent)
         return sents

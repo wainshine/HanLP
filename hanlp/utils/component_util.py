@@ -3,6 +3,7 @@
 # Date: 2019-12-31 19:24
 import os
 import traceback
+from sys import exit
 
 from hanlp import pretrained
 from hanlp.common.component import Component
@@ -11,11 +12,14 @@ from hanlp.utils.reflection import object_from_class_path, str_to_type
 from hanlp import version
 
 
-def load_from_meta_file(save_dir, meta_filename='meta.json', transform_only=False, load_kwargs=None,
+def load_from_meta_file(save_dir: str, meta_filename='meta.json', transform_only=False, load_kwargs=None,
                         **kwargs) -> Component:
     identifier = save_dir
     load_path = save_dir
     save_dir = get_resource(save_dir)
+    if save_dir.endswith('.json'):
+        meta_filename = os.path.basename(save_dir)
+        save_dir = os.path.dirname(save_dir)
     metapath = os.path.join(save_dir, meta_filename)
     if not os.path.isfile(metapath):
         tips = ''
@@ -33,14 +37,17 @@ def load_from_meta_file(save_dir, meta_filename='meta.json', transform_only=Fals
     assert cls, f'{meta_filename} doesn\'t contain class_path field'
     try:
         obj: Component = object_from_class_path(cls, **kwargs)
-        if hasattr(obj, 'load') and os.path.isfile(os.path.join(save_dir, 'config.json')):
+        if hasattr(obj, 'load'):
             if transform_only:
                 # noinspection PyUnresolvedReferences
                 obj.load_transform(save_dir)
             else:
                 if load_kwargs is None:
                     load_kwargs = {}
-                obj.load(save_dir, **load_kwargs)
+                if os.path.isfile(os.path.join(save_dir, 'config.json')):
+                    obj.load(save_dir, **load_kwargs)
+                else:
+                    obj.load(metapath, **load_kwargs)
             obj.meta['load_path'] = load_path
         return obj
     except Exception as e:
@@ -52,7 +59,8 @@ def load_from_meta_file(save_dir, meta_filename='meta.json', transform_only=Fals
             eprint(
                 f'{identifier} was created with hanlp-{model_version}, while you are running {cur_version}. '
                 f'Try to upgrade hanlp with\n'
-                f'pip install --upgrade hanlp')
+                f'pip install --upgrade hanlp\n'
+                f'If the problem persists, please submit an issue to https://github.com/hankcs/HanLP/issues .')
         exit(1)
 
 
