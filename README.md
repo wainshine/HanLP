@@ -16,7 +16,7 @@ HanLP requires Python 3.6 or later. GPU/TPU is suggested but not mandatory.
 
 ### Tokenization
 
-For an end user, the basic workflow starts with loading some pretrained models from disk or Internet. Each model has an identifier, which could be one path on your computer or an URL to any public servers. Here, let's load a tokenizer called `CTB6_CONVSEG` with 2 lines of code.
+For an end user, the basic workflow starts with loading some pretrained models from disk or Internet. Each model has an identifier, which could be one path on your computer or an URL to any public servers. To tokenize Chinese, let's load a tokenizer called `CTB6_CONVSEG` with 2 lines of code.
 
 ```python
 >>> import hanlp
@@ -169,7 +169,7 @@ A graph is a generalized tree, which conveys more information about the semantic
 HanLP implements the biaffine[^biaffine] model which delivers the SOTA performance.
 
 ```python
->>> semantic_parser = hanlp.load(SEMEVAL16_NEWS_BIAFFINE_ZH)
+>>> semantic_parser = hanlp.load(hanlp.pretrained.sdp.SEMEVAL16_NEWS_BIAFFINE_ZH)
 >>> print(semantic_parser([('蜡烛', 'NN'), ('两', 'CD'), ('头', 'NN'), ('烧', 'VV')]))
 1	蜡烛	_	NN	_	_	3	Poss	_	_
 1	蜡烛	_	NN	_	_	4	Pat	_	_
