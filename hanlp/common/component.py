@@ -95,7 +95,7 @@ class KerasComponent(Component, ABC):
         samples = size_of_dataset(tst_data)
         num_batches = math.ceil(samples / batch_size)
         if warm_up:
-            self.model.predict_on_batch(tst_data.take(1))
+            self.model.predict_on_batch(list(tst_data.take(1))[0])
         if output:
             assert save_dir, 'Must pass save_dir in order to output'
             if isinstance(output, bool):
@@ -469,7 +469,7 @@ class KerasComponent(Component, ABC):
     def predict_batch(self, batch, inputs=None, **kwargs):
         X = batch[0]
         Y = self.model.predict_on_batch(X)
-        for output in self.transform.Y_to_outputs(Y, X=X, inputs=inputs, **kwargs):
+        for output in self.transform.Y_to_outputs(Y, X=X, inputs=inputs, batch=batch, **kwargs):
             yield output
 
     @property

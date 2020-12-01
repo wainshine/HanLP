@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 from urllib.request import urlretrieve
 from pathlib import Path
 import numpy as np
-
+from pkg_resources import parse_version
 from hanlp.utils import time_util
 from hanlp.utils.log_util import logger
 from hanlp.utils.string_util import split_long_sentence_into
@@ -211,10 +211,10 @@ def download(url, save_path=None, save_dir=hanlp_home(), prefix=HANLP_URL, appen
             if not url.startswith(HANLP_URL):
                 hints_for_download += 'For third party data, you may find it on our mirror site:\n' \
                                       'https://od.hankcs.com/hanlp/data/\n'
-            installed_version, latest_version, latest_version_str = check_outdated()
+            installed_version, latest_version = check_outdated()
             if installed_version != latest_version:
                 hints_for_download += f'Or upgrade to the latest version({latest_version}):\npip install -U hanlp'
-            eprint(f'Failed to download {url} due to {repr(e)}. Please download it to {save_path} by yourself. '
+            eprint(f'Download failed due to {repr(e)}. Please download it to {save_path} by yourself. '
                    f'{hints_for_download}')
             exit(1)
         remove_file(save_path)
@@ -586,12 +586,7 @@ def check_outdated(package='hanlp', version=__version__, repository_url='https:/
     """
     Given the name of a package on PyPI and a version (both strings), checks
     if the given version is the latest version of the package available.
-    Returns a 2-tuple (is_outdated, latest_version) where
-    is_outdated is a boolean which is True if the given version is earlier
-    than the latest version, which is the string latest_version.
-    Attempts to cache on disk the HTTP call it makes for 24 hours. If this
-    somehow fails the exception is converted to a warning (OutdatedCacheFailedWarning)
-    and the function continues normally.
+    Returns a 2-tuple (installed_version, latest_version)
     `repository_url` is a `%` style format string
     to use a different repository PyPI repository URL,
     e.g. test.pypi.org or a private repository.
@@ -599,17 +594,12 @@ def check_outdated(package='hanlp', version=__version__, repository_url='https:/
     Adopted from https://github.com/alexmojaki/outdated/blob/master/outdated/__init__.py
     """
 
-    from pkg_resources import parse_version
-
     installed_version = parse_version(version)
-
-    latest_version_str = get_latest_info_from_pypi(package, repository_url)
-    latest_version = parse_version(latest_version_str)
-
-    return installed_version, latest_version, latest_version_str
+    latest_version = get_latest_info_from_pypi(package, repository_url)
+    return installed_version, latest_version
 
 
 def get_latest_info_from_pypi(package='hanlp', repository_url='https://pypi.python.org/pypi/%s/json'):
     url = repository_url % package
     response = urllib.request.urlopen(url).read()
-    return json.loads(response)['info']['version']
+    return parse_version(json.loads(response)['info']['version'])
